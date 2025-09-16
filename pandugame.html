@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Space Defender — Simple Playable Game</title>
+<style>
+:root{ --bg:#07122b; --panel:#0f2b4a; --accent:#ffd166; --muted:#9fb6d6; }
+html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;}
+body{background:linear-gradient(180deg,var(--bg),#021226);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:18px;color:var(--muted);}
+.container{width:900px;max-width:96vw;background:linear-gradient(180deg,var(--panel),#06263f);border-radius:12px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.6);position:relative;}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+h1{font-size:18px;margin:0;color:white;letter-spacing:0.6px;}
+.controls{display:flex;gap:8px;align-items:center;}
+button{background:var(--accent);border:0;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600;color:#03203a;}
+button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);}
+.hud{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:14px;}
+canvas{display:block;width:100%;height:540px;background:linear-gradient(180deg,#021226,#04243a);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);margin-bottom:10px;}
+.footer{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px;}
+.center{display:flex;align-items:center;gap:8px;}
+.msg{padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.02);color:var(--muted);}
+.instructions{font-size:13px;color:#cfe8ff;opacity:0.9;}
+.small{font-size:12px;color:#9fb6d6;}
+/* Overlay styles */
+#centerMsg {
+  display:none;
+  position:absolute;
+  top:40%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  font-size:32px;
+  color:#ff0;
+  font-weight:bold;
+}
+#nextBtn {
+  display:none;
+  position:absolute;
+  top:55%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  padding:12px 24px;
+  font-size:18px;
+  background:#28a745;
+  color:white;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<!-- LINK OUTSIDE GAME -->
+<div style="width:900px; max-width:96vw; margin:0 auto 12px auto; text-align:right; font-size:14px;">
+  <a href="https://chatgpt.com/share/68c3b159-3c70-8008-927d-6544890ee13a" target="_blank" style="color:#ffd166; text-decoration:none;">
+    View Chat History
+  </a>
+</div>
+
+<div class="container" role="application" aria-label="Space Defender game">
+  <header>
+    <h1>Space Defender — Simple, playable & winnable</h1>
+    <div class="controls">
+      <button id="startBtn">Start Game</button>
+      <button id="restartBtn" class="secondary">Restart</button>
+      <div class="hud">
+        <div class="msg">Lives: <span id="lives">3</span></div>
+        <div class="msg">Score: <span id="score">0</span></div>
+        <div class="msg">Wave: <span id="wave">0</span></div>
+        <div class="msg">Target: <span id="target">30</span></div>
+      </div>
+    </div>
+  </header>
+
+  <canvas id="gameCanvas" width="800" height="540" tabindex="0"></canvas>
+  <div id="centerMsg">You Win!</div>
+  <button id="nextBtn">Next Wave</button>
+
+  <div class="footer">
+    <div class="instructions"> Controls: ← → or A D to move, Space to shoot. Clear all waves to win. </div>
+    <div class="center small"> <div id="status" class="msg">Ready</div> </div>
+  </div>
+</div>
+
+<script>
+/* THE GAME JAVASCRIPT IS EXACTLY AS BEFORE, NO CHANGES */
+(() => {
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', {alpha: false});
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const waveEl = document.getElementById('wave');
+const targetEl = document.getElementById('target');
+const statusEl = document.getElementById('status');
+const centerMsg = document.getElementById('centerMsg');
+const nextBtn = document.getElementById('nextBtn');
+const W = canvas.width, H = canvas.height;
+
+const PLAYER_SPEED = 4.5;
+const BULLET_SPEED = 7.5;
+const ENEMY_COLS = 8;
+const ENEMY_DROP = 24;
+const ENEMY_SPEED_BASE = 0.6;
+
+let running=false, animationId=null, keys={}, bullets=[], enemies=[], score=0, lives=3, wave=1, waveCleared=false, lastEnemyDirection=1;
+
+const player = { x: W/2, y: H - 46, w: 44, h: 14, cooldown:0 };
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function rand(min,max){return Math.random()*(max-min)+min;}
+function spawnWave(which){enemies=[];lastEnemyDirection=1;const rows=Math.min(2+(which-1),6);const spacingX=(W-120)/ENEMY_COLS;for(let r=0;r<rows;r++){for(let c=0;c<ENEMY_COLS;c++){enemies.push({x:60+c*spacingX+rand(-6,6),y:60+r*40+rand(-4,4),w:30,h:18,alive:true,vx:ENEMY_SPEED_BASE+which*0.08});}}}
+function resetGame(){score=0;lives=3;wave=1;waveCleared=false;bullets=[];spawnWave(wave);updateHUD();player.x=W/2;statusEl.textContent="Ready";centerMsg.style.display="none";nextBtn.style.display="none";}
+function startGame(){if(running)return;running=true;statusEl.textContent="Playing";loop();}
+function endGame(win=false){running=false;statusEl.textContent= win? "You Win! 🎉":"Game Over";cancelAnimationFrame(animationId);animationId=null;}
+function updateHUD(){scoreEl.textContent=score;livesEl.textContent=lives;waveEl.textContent=wave;targetEl.textContent="10";}
+window.addEventListener('keydown',e=>{keys[e.code]=true;if(["ArrowLeft","ArrowRight","Space","KeyA","KeyD"].includes(e.code)){e.preventDefault();}});
+window.addEventListener('keyup',e=>{keys[e.code]=false;});
+function tryShoot(){if(player.cooldown>0)return;bullets.push({x:player.x,y:player.y-12,r:4,vy:-BULLET_SPEED});player.cooldown=14;}
+function rectHit(a,b){return a.x-(a.w||a.r)<b.x+(b.w||b.r)&&a.x+(a.w||a.r)>b.x-(b.w||b.r)&&a.y-(a.h||a.r)<b.y+(b.h||b.r)&&a.y+(a.h||a.r)>b.y-(b.h||b.r);}
+function loop(){animationId=requestAnimationFrame(loop);
+if(keys['ArrowLeft']||keys['KeyA'])player.x-=PLAYER_SPEED;if(keys['ArrowRight']||keys['KeyD'])player.x+=PLAYER_SPEED;player.x=clamp(player.x,20,W-20);if((keys['Space']||keys['KeyK'])&&running)tryShoot();if(player.cooldown>0)player.cooldown--;
+for(let i=bullets.length-1;i>=0;i--){bullets[i].y+=bullets[i].vy;if(bullets[i].y<-10)bullets.splice(i,1);}
+let hitEdge=false;for(const e of enemies){if(!e.alive)continue;e.x+=e.vx*lastEnemyDirection;if(e.x<20||e.x>W-20)hitEdge=true;}
+if(hitEdge){lastEnemyDirection*=-1;for(const e of enemies){if(!e.alive)continue;e.y+=ENEMY_DROP;}}
+for(let bIndex=bullets.length-1;bIndex>=0;bIndex--){const b=bullets[bIndex];for(let eIndex=0;eIndex<enemies.length;eIndex++){const ent=enemies[eIndex];if(!ent.alive)continue;if(rectHit({x:b.x,y:b.y,r:b.r},{x:ent.x,y:ent.y,w:ent.w,h:ent.h})){ent.alive=false;bullets.splice(bIndex,1);score++;updateHUD();break;}}}
+for(const ent of enemies){if(!ent.alive)continue;if(ent.y+ent.h/2>=player.y-6){ent.alive=false;lives--;updateHUD();if(lives<=0){endGame(false);return;}}
+if(rectHit({x:player.x,y:player.y,w:player.w,h:player.h},{x:ent.x,y:ent.y,w:ent.w,h:ent.h})){ent.alive=false;lives--;updateHUD();if(lives<=0){endGame(false);return;}}}
+const aliveRemaining=enemies.filter(e=>e.alive).length;if(aliveRemaining===0 && !waveCleared){waveCleared=true;if(wave>=10){centerMsg.textContent="🎉 You Win!";centerMsg.style.display="block";statusEl.textContent="Game Over";endGame(true);} else{statusEl.textContent="Wave cleared!";nextBtn.style.display="block";}}
+draw();}
+function clear(){ctx.fillStyle="#021226";ctx.fillRect(0,0,W,H);}
+function drawPlayer(){ctx.save();ctx.translate(player.x,player.y);ctx.fillStyle="#9be7ff";ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(22,8);ctx.lineTo(10,8);ctx.lineTo(8,14);ctx.lineTo(-8,14);ctx.lineTo(-10,8);ctx.lineTo(-22,8);ctx.closePath();ctx.fill();ctx.fillStyle="#012e3b";ctx.beginPath();ctx.ellipse(0,-2,8,4,0,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawBullets(){ctx.fillStyle="#ffd166";for(const b of bullets){ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();}}
+function drawEnemies(){for(const e of enemies){if(!e.alive)continue;ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle="#ff6b6b";ctx.beginPath();ctx.ellipse(0,0,e.w/2,e.h/2,0,0,Math.PI*2);ctx.fill();ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(-6,-2,2.2,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(6,-2,2.2,0,Math.PI*2);ctx.fill();ctx.restore();}}
+function draw(){clear();drawEnemies();drawPlayer();drawBullets();}
+startBtn.addEventListener('click',()=>{if(!running)startGame();});
+restartBtn.addEventListener('click',()=>{resetGame();if(!running){setTimeout(()=>{startGame();},200);}});
+nextBtn.addEventListener('click',()=>{wave++;spawnWave(wave);updateHUD();statusEl.textContent="Playing";waveCleared=false;nextBtn.style.display="none";centerMsg.style.display="none";});
+resetGame();draw();
+})();
+</script>
+</body>
+</html>
